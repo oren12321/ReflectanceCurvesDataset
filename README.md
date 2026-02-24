@@ -62,3 +62,22 @@ At this stage, our data represents **"Pigment + Acrylic Binder + White Card."** 
 *   **The "Infinite Thickness" Simulation:** 
     Once we have the "Clean K/S DNA," we simulate a **Masstone**. In physics, if you make a paint layer thick enough, no light ever reaches the white card. This is called "Infinite Thickness." 
 *   **The Result:** `stage3_physics_data.json`. This stage transforms "pale lab swatches" into "deep tube colors." By mathematically "sinking" the pigment into a simulated binder and removing the white card's interference, we finally achieve the rich, saturated appearance found in professional artist catalogs.
+
+## Stage 4: Human Perception (The Final RGB Tiles)
+**Concept:** Spectral Integration & The Standard Observer.
+
+This is the final stage of the visualization pipeline. While the previous stages operated in the "Invisible World" of wavelengths and physical absorption, Stage 4 translates those mathematical curves into the three numbers your monitor understands: **Red, Green, and Blue (RGB)**.
+
+*   **The Problem of the Monitor:** 
+    A computer monitor cannot "emit" a spectral curve; it can only light up Red, Green, and Blue sub-pixels. To find the correct mix of these three lights, we must simulate how the human eye reacts to the "Deep Masstone" curves generated in Stage 3.
+*   **The Science of the Standard Observer (CIE 1931):** 
+    In 1931, the Commission Internationale de l'Éclairage (CIE) established the **Color Matching Functions (CMFs)**. These are three specific curves that represent the sensitivity of the human eye's cones. 
+    1.  **X (Red/Long Wavelengths)**
+    2.  **Y (Green/Medium Wavelengths - also Luminance)**
+    3.  **Z (Blue/Short Wavelengths)**
+    By "multiplying" our pigment's reflectance curve by these human sensitivity curves, we calculate the **XYZ Tristimulus values**—the universal mathematical coordinates for any color the human eye can see.
+*   **The D65 Illuminant (Standard Daylight):**
+    A pigment has no color in total darkness. To see it, we must "shine" a light on it. We use **D65**, which is the international standard for average midday sunlight. This ensures the digital colors look like they would in a professional art gallery.
+*   **The sRGB Conversion & Gamma Correction:**
+    The XYZ coordinates are converted into the **sRGB color space**. Finally, we apply **Gamma Correction**, which adjusts the brightness to account for the way digital screens and human eyes perceive "non-linear" light.
+*   **The Result:** `stage4_display_data.json`. Every pigment now has a final **RGB [0-255]** value and a **Hex Code**. These are the "Tiles" that will represent the deep, saturated, professional oil paints in your application's user interface.
