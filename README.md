@@ -46,3 +46,19 @@ A common issue in laboratory-grade spectral data is that measurements often appe
     2.  If its calculated Luminance is $Y=79.48$, the engine calculates a **Global Scalar** ($95.0 / 79.48 \approx 1.20$).
     3.  Every pigment in the library is then multiplied by this **1.20 factor**. 
 *   **Result:** `stage2_calibrated_data.json`. This stage "turns on the studio lights." It ensures that Titanium White hits a professional target of **Y = 95** (leaving 5% "headroom" for highlights), while all other colors shift proportionally to maintain their correct physical relationship to the white point.
+
+## Stage 3: The Physics of "Binder & Ground" Removal
+**Concept:** Subtractive De-convolution & The "Infinite Thickness" Masstone.
+
+At this stage, our data represents **"Pigment + Acrylic Binder + White Card."** This explains why the colors still appear "pale" or "chalky" compared to professional oil paint catalogs. In the physical laboratory, the pigment was applied as a thin, translucent film. To achieve the deep, saturated look of **Winsor & Newton** artist colors, we must mathematically remove the optical interference of the binder and the white background.
+
+*   **The Problem of the Substrate (The White Card):** 
+    Because the paint layer is thin, light passes through the pigment, hits the white card underneath, and bounces back to the sensor. This "backlight" artificially inflates the reflectance values. We must isolate the **Absorption (K)** of the pigment particles alone.
+*   **The Science of Kubelka-Munk (K-M) Theory:** 
+    We move from **Reflectance (R)**—which is a surface measurement—to the **K/S Ratio**, which describes the internal physics of the material.
+    *   **K (Absorption):** The pigment's ability to "eat" specific wavelengths of light.
+    *   **S (Scattering):** The pigment's ability to "bounce" light (opacity).
+    By using the **Acrylic Binder** as a "Baseline Reference," we can subtract its specific absorption from the total measurement, effectively "cleaning" the pigment DNA.
+*   **The "Infinite Thickness" Simulation:** 
+    Once we have the "Clean K/S DNA," we simulate a **Masstone**. In physics, if you make a paint layer thick enough, no light ever reaches the white card. This is called "Infinite Thickness." 
+*   **The Result:** `stage3_physics_data.json`. This stage transforms "pale lab swatches" into "deep tube colors." By mathematically "sinking" the pigment into a simulated binder and removing the white card's interference, we finally achieve the rich, saturated appearance found in professional artist catalogs.
