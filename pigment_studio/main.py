@@ -4,6 +4,8 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                              QLabel, QTextEdit)
 from PySide6.QtCore import Qt
 
+from spectral_tool import SpectralAnalysisWidget
+
 class PigmentApp(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -86,6 +88,10 @@ class PigmentApp(QMainWindow):
         self.log_output = QTextEdit()
         self.log_output.setReadOnly(True)
         self.log_output.append("> System initialized.")
+        
+        self.spectral_tool = SpectralAnalysisWidget()
+        self.workspace_tabs.addTab(self.spectral_tool, "Spectral Editor")
+        self.spectral_tool.log_signal.connect(self.log_output.append)
 
         # Assemble Right Side
         self.right_splitter.addWidget(self.workspace_tabs)
