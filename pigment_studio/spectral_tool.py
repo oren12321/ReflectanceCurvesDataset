@@ -101,6 +101,10 @@ class SpectralAnalysisWidget(QWidget):
 
     # --- Interaction Logic (Ported from your code) ---
     def on_click(self, event):
+        # If the Zoom or Pan tool is active, ignore point interaction
+        if self.canvas.toolbar.mode != "":
+            return
+    
         if event.inaxes != self.ax: return
         
         # Find closest point
