@@ -440,16 +440,37 @@ class SpectralAnalysisWidget(QWidget):
             self.update_view()
 
     def on_move(self, event):
+        # 1. Update the Floating Tooltip
         if event.inaxes == self.ax and self.toolbar.mode == "":
             self.tooltip.set_visible(True)
             self.tooltip.xy = (event.xdata, event.ydata)
             self.tooltip.set_text(f"λ: {event.xdata:.1f} nm\nR: {event.ydata:.1f}%")
-        else: self.tooltip.set_visible(False)
+        else: 
+            self.tooltip.set_visible(False)
+
+        # 2. Handle Point Dragging with Safety Check
         if self.dragging_key is not None and self.toolbar.mode == "" and event.inaxes == self.ax:
+            # --- ADD THIS CHECK ---
+            if self.dragging_key not in self.data.points:
+                return 
+            # ----------------------
+
             new_x, new_y = np.clip(event.xdata, WAVE_MIN, WAVE_MAX), np.clip(event.ydata, 0, 100)
-            self.data.points.pop(self.dragging_key); self.data.points[new_x] = new_y; self.dragging_key = new_x
+            
+            # --- PREVENT OVERWRITE (The "Anti-Eating" Check) ---
+            if new_x in self.data.points and new_x != self.dragging_key:
+                new_x += 1e-9 # Add a microscopic offset so the ID is unique
+            # ---------------------------------------------------
+            
+            # Perform the update
+            self.data.points.pop(self.dragging_key)
+            self.data.points[new_x] = new_y
+            self.dragging_key = new_x
+            
             self.update_view()
-        else: self.canvas.draw_idle()
+        else: 
+            self.canvas.draw_idle()
+
 
     def on_release(self, event): self.dragging_key = None; self.update_view()
     def reset(self): self.data.points = {380: 50.0, 780: 50.0}; self.update_view(); self.log_signal.emit("Reset curve.")
