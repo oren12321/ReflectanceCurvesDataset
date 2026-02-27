@@ -43,9 +43,6 @@ class PigmentApp(QMainWindow):
         # Left: Sidebar
         self.sidebar_tabs = QTabWidget()
         self.sidebar_tabs.setTabPosition(QTabWidget.West)
-        self.sidebar_tabs.addTab(self.create_placeholder("Analysis Tools"), "ANL")
-        self.sidebar_tabs.addTab(self.create_placeholder("Synthesis Lab"), "SYN")
-        self.sidebar_tabs.addTab(self.create_placeholder("Dataset Manager"), "DAT")
         self.setup_sidebar_file_tab()
 
         # Right: Workspace + Logs
