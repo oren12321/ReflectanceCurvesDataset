@@ -437,7 +437,7 @@ class SpectralAnalysisWidget(QWidget):
                     return
                 self.dragging_key = keys[idx]; return
         if event.button == 1:
-            self.data.points[event.xdata] = np.clip(event.ydata, 0, 100)
+            self.data.points[event.xdata] = np.clip(event.ydata, 0.5, 99.5)
             self.dragging_key = event.xdata
             self.update_view()
 
@@ -457,7 +457,7 @@ class SpectralAnalysisWidget(QWidget):
                 return 
             # ----------------------
 
-            new_x, new_y = np.clip(event.xdata, WAVE_MIN, WAVE_MAX), np.clip(event.ydata, 0, 100)
+            new_x, new_y = np.clip(event.xdata, WAVE_MIN, WAVE_MAX), np.clip(event.ydata, 0.5, 99.5)
             
             # --- PREVENT OVERWRITE (The "Anti-Eating" Check) ---
             if new_x in self.data.points and new_x != self.dragging_key:
