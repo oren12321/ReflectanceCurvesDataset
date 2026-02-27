@@ -434,6 +434,31 @@ class SpectralAnalysisWidget(QWidget):
             self.illuminant = colour.spectral_distributions_illuminants[ill_key].copy().align(self.cmfs.shape)
     
         full_y = self.data.get_interpolated()
+        
+        # 2. Find Peaks and Troughs
+        # A simple way: find indices where y is local max/min
+        peak_idx = np.argmax(full_y)
+        trough_idx = np.argmin(full_y)
+        
+        # Clear old markers (We'll use a specific list to track these)
+        if hasattr(self, 'extrema_annotes'):
+            for ann in self.extrema_annotes: ann.remove()
+        self.extrema_annotes = []
+
+        # Annotate Peak
+        p_wave = WAVE_MIN + peak_idx
+        p_val = full_y[peak_idx]
+        self.extrema_annotes.append(self.ax.annotate(f"Peak: {p_wave}nm", 
+            xy=(p_wave, p_val), xytext=(0, 10), textcoords='offset points',
+            ha='center', fontsize=8, color='#90ee90', fontweight='bold'))
+
+        # Annotate Trough
+        t_wave = WAVE_MIN + trough_idx
+        t_val = full_y[trough_idx]
+        self.extrema_annotes.append(self.ax.annotate(f"Dip: {t_wave}nm", 
+            xy=(t_wave, t_val), xytext=(0, -15), textcoords='offset points',
+            ha='center', fontsize=8, color='#ff7f7f', fontweight='bold'))
+        
         self.line.set_data(WAVE_SAMPLES, full_y)
         self.dots.set_offsets(np.c_[list(self.data.points.keys()), list(self.data.points.values())])
         
