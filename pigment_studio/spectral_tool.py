@@ -363,12 +363,15 @@ class SpectralAnalysisWidget(QWidget):
         
         # 5. Convert to Lab for goal storage
         target_xyz = colour.sRGB_to_XYZ(target_rgb)
-        self.data.target_lab = colour.XYZ_to_Lab(target_xyz)
+        lab_array = colour.XYZ_to_Lab(target_xyz)
+        
+        # Store as a list to ensure JSON serializability
+        self.data.target_lab = lab_array.tolist()
         
         # Update UI Preview
         hex_c = '#%02x%02x%02x' % tuple((target_rgb * 255).astype(int))
         self.target_preview.setStyleSheet(f"background-color: {hex_c}; border-radius: 3px; border: 1px solid #d4af37;")
-        self.target_preview.setText(f"Target Lab: {np.round(self.data.target_lab, 1)}")
+        self.target_preview.setText(f"Target Lab: {np.round(lab_array, 1)}")
         
         self.update_view() # Trigger Delta-E recalc
         self.log_signal.emit("New target color extracted from crop.")
@@ -386,6 +389,20 @@ class SpectralAnalysisWidget(QWidget):
         
         # --- NEW: Delta-E Calculation ---
         if self.data.target_lab is not None:
+            # 1. Convert Lab back to RGB for the UI Swatch
+            # We assume D65/2deg as used elsewhere in your app
+            t_xyz = colour.Lab_to_XYZ(self.data.target_lab)
+            t_rgb = np.clip(colour.XYZ_to_sRGB(t_xyz), 0, 1)
+            t_hex = '#%02x%02x%02x' % tuple((t_rgb * 255).astype(int))
+            
+            # 2. Update the Sidebar Target Label
+            self.target_preview.setStyleSheet(
+                f"background-color: {t_hex}; border-radius: 3px; border: 1px solid #d4af37;"
+            )
+            # Round for clean professional display
+            rounded_lab = np.round(self.data.target_lab, 1)
+            self.target_preview.setText(f"Target Lab: {rounded_lab}")
+        
             # Using CIEDE2000 for professional accuracy
             de = colour.delta_E(self.data.target_lab, Lab, method='CIE 2000')
             
