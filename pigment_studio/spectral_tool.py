@@ -6,7 +6,7 @@ import io
 import os
 from PIL import Image
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton, 
-                             QLabel, QFileDialog, QSlider, QGroupBox, QFrame, QComboBox, QCheckBox)
+                             QLabel, QFileDialog, QSlider, QGroupBox, QFrame, QComboBox, QCheckBox, QScrollArea)
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QImage
 from matplotlib.figure import Figure
@@ -59,22 +59,43 @@ class SpectralAnalysisWidget(QWidget):
         self.pick_radius = 10
         self.bg_artists = [] 
 
-        # --- Main Layout (Horizontal) ---
+        # --- 1. Main Layout (Horizontal) ---
         self.main_h_layout = QHBoxLayout(self)
         self.main_h_layout.setContentsMargins(0, 0, 0, 0)
         self.main_h_layout.setSpacing(0)
 
-        # --- LEFT: Control Sidebar (Fixed Width) ---
+        # --- 2. LEFT: Control Sidebar Container ---
         self.controls_sidebar = QFrame()
         self.controls_sidebar.setFixedWidth(240)
         self.controls_sidebar.setStyleSheet("background-color: #3d3d3b; border-right: 1px solid #2b2b2a;")
-        self.sidebar_layout = QVBoxLayout(self.controls_sidebar)
+        
+        # Create the SINGLE layout for the sidebar frame
+        outer_sidebar_layout = QVBoxLayout(self.controls_sidebar)
+        outer_sidebar_layout.setContentsMargins(0, 0, 0, 0)
+
+        # Create the Scroll Area
+        self.scroll_area = QScrollArea()
+        self.scroll_area.setWidgetResizable(True)
+        self.scroll_area.setFrameShape(QFrame.NoFrame)
+        self.scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        
+        # Create the internal content widget and ITS layout
+        self.sidebar_content = QWidget()
+        self.sidebar_layout = QVBoxLayout(self.sidebar_content)
         self.sidebar_layout.setContentsMargins(10, 10, 10, 10)
         self.sidebar_layout.setSpacing(15)
 
+        # Assemble the Scroll Architecture
+        self.scroll_area.setWidget(self.sidebar_content)
+        outer_sidebar_layout.addWidget(self.scroll_area)
+
+        # Apply the custom CSS for the thin scrollbar
+        self.apply_sidebar_styles()
+
+        # Populate the sidebar using the internal layout
         self.setup_sidebar_ui()
 
-        # --- RIGHT: Canvas Area ---
+        # --- 3. RIGHT: Canvas Area ---
         self.canvas_container = QWidget()
         self.canvas_layout = QVBoxLayout(self.canvas_container)
         self.canvas_layout.setContentsMargins(5, 5, 5, 5)
@@ -100,29 +121,28 @@ class SpectralAnalysisWidget(QWidget):
         gradient = np.linspace(WAVE_MIN, WAVE_MAX, 256)
         self.ax.imshow([gradient], extent=[WAVE_MIN, WAVE_MAX, -5, 0], aspect='auto', cmap='turbo', zorder=0)
         self.ax.grid(True, which='both', linestyle=':', color='#5a5a58', alpha=0.6)
-        self.ax.set_axisbelow(True) # Ensures grid stays behind the curve
+        self.ax.set_axisbelow(True) 
         self.ax.set_ylim(-5, 105)
         self.ax.set_xlim(WAVE_MIN - 5, WAVE_MAX + 5)
         
         self.canvas_layout.addWidget(self.toolbar)
         self.canvas_layout.addWidget(self.canvas)
 
-        # Color Preview (Now inside the canvas area for visibility)
+        # Color Preview
         self.color_preview = QLabel("Color Preview")
         self.color_preview.setFixedHeight(40)
         self.color_preview.setAlignment(Qt.AlignCenter)
         self.canvas_layout.addWidget(self.color_preview)
 
-        # Final assembly
+        # Final Assembly of the two main parts
         self.main_h_layout.addWidget(self.controls_sidebar)
         self.main_h_layout.addWidget(self.canvas_container)
 
-        # Matplotlib Events
+        # Events and Logic Init
         self.canvas.mpl_connect('button_press_event', self.on_click)
         self.canvas.mpl_connect('button_release_event', self.on_release)
         self.canvas.mpl_connect('motion_notify_event', self.on_move)
 
-        # Colour Science Init (Standard checks)
         try:
             self.cmfs = colour.MSDS_CMFS['CIE 1931 2 Degree Standard Observer'].copy().align(colour.SpectralShape(WAVE_MIN, WAVE_MAX, 1))
             self.illuminant = colour.SDS_ILLUMINANTS['D65'].copy().align(self.cmfs.shape)
@@ -130,10 +150,41 @@ class SpectralAnalysisWidget(QWidget):
             self.cmfs = colour.multi_spectral_distributions['CIE 1931 2 Degree Standard Observer'].copy().align(colour.SpectralShape(WAVE_MIN, WAVE_MAX, 1))
             self.illuminant = colour.spectral_distributions_illuminants['D65'].copy().align(self.cmfs.shape)
         
-        # Store for JSON export
         self.data.illuminant_key = 'D65'
-        
         self.update_view()
+
+
+    def apply_sidebar_styles(self):
+        self.scroll_area.setStyleSheet("""
+            QScrollArea { background-color: transparent; border: none; }
+            
+            /* The Track */
+            QScrollBar:vertical {
+                background: #3d3d3b;
+                width: 6px; /* Very thin */
+                margin: 0px;
+            }
+            
+            /* The Handle */
+            QScrollBar::handle:vertical {
+                background: #5a5a58;
+                min-height: 20px;
+                border-radius: 3px;
+            }
+            QScrollBar::handle:vertical:hover {
+                background: #d4af37; /* Gold highlight on hover */
+            }
+            
+            /* Remove Arrows */
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+                height: 0px;
+                background: none;
+            }
+            QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {
+                background: none;
+            }
+        """)
+
 
     def setup_sidebar_ui(self):
         # Section 1: General Actions
