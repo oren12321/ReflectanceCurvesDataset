@@ -223,11 +223,6 @@ class SpectralAnalysisWidget(QWidget):
         match_layout.addWidget(self.target_preview)
         match_layout.addWidget(self.label_delta_e)
         
-        # Section: Lighting Environment
-        lbl_light = QLabel("ILLUMINANT (Environment)")
-        lbl_light.setStyleSheet("font-weight: bold; color: #d4af37;")
-        self.sidebar_layout.addWidget(lbl_light)
-        
         # Global Amplitude
         lbl_amp = QLabel("Global Amplitude (Scale %)")
         self.slider_amplitude = QSlider(Qt.Horizontal)
@@ -236,6 +231,11 @@ class SpectralAnalysisWidget(QWidget):
         self.slider_amplitude.valueChanged.connect(self.apply_amplitude_scaling)
         self.sidebar_layout.addWidget(lbl_amp)
         self.sidebar_layout.addWidget(self.slider_amplitude)
+        
+        # Section: Lighting Environment
+        lbl_light = QLabel("ILLUMINANT (Environment)")
+        lbl_light.setStyleSheet("font-weight: bold; color: #d4af37;")
+        self.sidebar_layout.addWidget(lbl_light)
 
         self.combo_illuminant = QComboBox()
         self.combo_illuminant.addItems(["D65 (Daylight)", "A (Incandescent)", "F2 (Fluorescent)"])

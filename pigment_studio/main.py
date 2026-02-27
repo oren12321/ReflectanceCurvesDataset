@@ -132,6 +132,8 @@ class PigmentApp(QMainWindow):
             self.spectral_tool.combo_active_bg.clear() # Clears dropdown
             self.spectral_tool.update_view() # Resets graph & target labels
             
+            self.spectral_tool.combo_illuminant.setCurrentIndex(0)
+            
             self.log_output.append("> New Session Started. All data cleared.")
 
     def handle_session_export(self):
