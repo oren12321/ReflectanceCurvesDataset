@@ -92,6 +92,8 @@ class SpectralAnalysisWidget(QWidget):
         
         gradient = np.linspace(WAVE_MIN, WAVE_MAX, 256)
         self.ax.imshow([gradient], extent=[WAVE_MIN, WAVE_MAX, -5, 0], aspect='auto', cmap='turbo', zorder=0)
+        self.ax.grid(True, which='both', linestyle=':', color='#5a5a58', alpha=0.6)
+        self.ax.set_axisbelow(True) # Ensures grid stays behind the curve
         self.ax.set_ylim(-5, 105)
         self.ax.set_xlim(WAVE_MIN - 5, WAVE_MAX + 5)
         
