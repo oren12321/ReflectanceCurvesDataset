@@ -227,6 +227,15 @@ class SpectralAnalysisWidget(QWidget):
         lbl_light = QLabel("ILLUMINANT (Environment)")
         lbl_light.setStyleSheet("font-weight: bold; color: #d4af37;")
         self.sidebar_layout.addWidget(lbl_light)
+        
+        # Global Amplitude
+        lbl_amp = QLabel("Global Amplitude (Scale %)")
+        self.slider_amplitude = QSlider(Qt.Horizontal)
+        self.slider_amplitude.setRange(50, 150) # 50% to 150% scaling
+        self.slider_amplitude.setValue(100)
+        self.slider_amplitude.valueChanged.connect(self.apply_amplitude_scaling)
+        self.sidebar_layout.addWidget(lbl_amp)
+        self.sidebar_layout.addWidget(self.slider_amplitude)
 
         self.combo_illuminant = QComboBox()
         self.combo_illuminant.addItems(["D65 (Daylight)", "A (Incandescent)", "F2 (Fluorescent)"])
@@ -245,6 +254,19 @@ class SpectralAnalysisWidget(QWidget):
         layout.addWidget(lbl)
         layout.addWidget(s)
         return s
+        
+    def apply_amplitude_scaling(self, value):
+        scale = value / 100.0
+        # We modify the values, but keep them within our 0.5 - 99.5 physical limit
+        for k in self.data.points:
+            self.data.points[k] = np.clip(self.data.points[k] * scale, 0.5, 99.5)
+        
+        # Reset slider to neutral so it doesn't "double-scale" next time
+        self.slider_amplitude.blockSignals(True)
+        self.slider_amplitude.setValue(100)
+        self.slider_amplitude.blockSignals(False)
+        
+        self.update_view()
 
     def remove_last_layer(self):
         idx = self.combo_active_bg.currentIndex()
