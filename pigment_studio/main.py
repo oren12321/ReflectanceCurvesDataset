@@ -2,7 +2,7 @@ import sys
 import json
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
                              QHBoxLayout, QTabWidget, QSplitter, QFrame, 
-                             QLabel, QTextEdit, QPushButton, QFileDialog)
+                             QLabel, QTextEdit, QPushButton, QFileDialog, QMessageBox)
 from PySide6.QtCore import Qt
 from spectral_tool import SpectralAnalysisWidget, SpectralData
 
@@ -80,6 +80,27 @@ class PigmentApp(QMainWindow):
         lbl.setStyleSheet("font-weight: bold; color: #d4af37;")
         layout.addWidget(lbl)
 
+        self.btn_new_session = QPushButton("New Session")
+        # Professional "Danger" style: Dark red background with a subtle highlight
+        danger_style = """
+            QPushButton {
+                padding: 8px;
+                background-color: #722f37; /* Wine Red */
+                border: 1px solid #a52a2a;
+                color: #ffffff;
+                font-weight: bold;
+                border-radius: 3px;
+            }
+            QPushButton:hover {
+                background-color: #8b0000; /* Darker Red on hover */
+                border: 1px solid #ff4500;
+            }
+            QPushButton:pressed {
+                background-color: #4a1a1e;
+            }
+        """
+        self.btn_new_session.setStyleSheet(danger_style)
+        
         self.btn_sidebar_import = QPushButton("Import Session")
         self.btn_sidebar_export = QPushButton("Export Session")
         
@@ -87,13 +108,34 @@ class PigmentApp(QMainWindow):
         self.btn_sidebar_import.setStyleSheet(style)
         self.btn_sidebar_export.setStyleSheet(style)
 
+        self.btn_new_session.clicked.connect(self.handle_new_session)
         self.btn_sidebar_import.clicked.connect(self.handle_session_import)
         self.btn_sidebar_export.clicked.connect(self.handle_session_export)
 
+        layout.addWidget(self.btn_new_session)
         layout.addWidget(self.btn_sidebar_import)
         layout.addWidget(self.btn_sidebar_export)
         layout.addStretch()
         self.sidebar_tabs.addTab(session_widget, "FILE")
+
+    def handle_new_session(self):
+        # 1. Show Aggressive Warning Dialog
+        reply = QMessageBox.question(
+            self, "Confirm New Session",
+            "This will clear all current work, background layers, and targets. \n\nAre you sure?",
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.No
+        )
+
+        if reply == QMessageBox.Yes:
+            # 2. Reset the shared data model
+            self.shared_spectral_data.reset_all() # We will define this in SpectralData
+            
+            # 3. Force UI Updates
+            self.spectral_tool.refresh_bg_artists() # Clears images
+            self.spectral_tool.combo_active_bg.clear() # Clears dropdown
+            self.spectral_tool.update_view() # Resets graph & target labels
+            
+            self.log_output.append("> New Session Started. All data cleared.")
 
     def handle_session_export(self):
         path, _ = QFileDialog.getSaveFileName(self, "Export Session", "", "JSON (*.json)")

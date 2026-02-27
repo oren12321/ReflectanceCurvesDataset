@@ -20,6 +20,10 @@ WAVE_SAMPLES = np.arange(WAVE_MIN, WAVE_MAX + 1, 1)
 
 class SpectralData:
     def __init__(self):
+        self.reset_all()
+        
+    def reset_all(self):
+        """Purges all data for a fresh start."""
         self.points = {380: 50.0, 780: 50.0}
         self.bg_layers = [] # List of dicts: {"base64": str, "extent": [l, r, b, t], "visible": bool, "name": str}
         self.target_lab = None  # Store as [L, a, b] list or None
@@ -418,6 +422,10 @@ class SpectralAnalysisWidget(QWidget):
             self.label_delta_e.setStyleSheet(f"color: {color}; font-size: 18px; font-weight: bold;")
         else:
             self.label_delta_e.setText("ΔE: ---")
+            self.target_preview.setStyleSheet("background: #2b2b2a; border: 1px solid #5a5a58;")
+            self.target_preview.setText("No Target Loaded")
+            self.label_delta_e.setText("ΔE: ---")
+            self.label_delta_e.setStyleSheet("color: #e0e0e0; font-size: 16px;")
         
         text_col = 'white' if Lab[0] < 50 else 'black'
         self.color_preview.setStyleSheet(f"background-color:{hex_c}; color:{text_col}; border-radius:4px; font-weight:bold; border: 1px solid #3d3d3b;")
