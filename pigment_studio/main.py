@@ -4,7 +4,7 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                              QLabel, QTextEdit)
 from PySide6.QtCore import Qt
 
-from spectral_tool import SpectralAnalysisWidget
+from spectral_tool import SpectralAnalysisWidget, SpectralData
 
 class PigmentApp(QMainWindow):
     def __init__(self):
@@ -89,7 +89,10 @@ class PigmentApp(QMainWindow):
         self.log_output.setReadOnly(True)
         self.log_output.append("> System initialized.")
         
-        self.spectral_tool = SpectralAnalysisWidget()
+        # Create the shared data model
+        self.shared_spectral_data = SpectralData()
+        
+        self.spectral_tool = SpectralAnalysisWidget(self.shared_spectral_data)
         self.workspace_tabs.addTab(self.spectral_tool, "Spectral Editor")
         self.spectral_tool.log_signal.connect(self.log_output.append)
 
