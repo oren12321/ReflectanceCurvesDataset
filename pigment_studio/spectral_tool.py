@@ -8,9 +8,12 @@ from PIL import Image
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton, 
                              QLabel, QFileDialog, QSlider, QGroupBox, QFrame, QComboBox, QCheckBox)
 from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QImage
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.backends.backend_qtagg import NavigationToolbar2QT as NavigationToolbar
+
+from crop_dialog import CropDialog
 
 WAVE_MIN, WAVE_MAX = 380, 780
 WAVE_SAMPLES = np.arange(WAVE_MIN, WAVE_MAX + 1, 1)
@@ -19,6 +22,7 @@ class SpectralData:
     def __init__(self):
         self.points = {380: 50.0, 780: 50.0}
         self.bg_layers = [] # List of dicts: {"base64": str, "extent": [l, r, b, t], "visible": bool, "name": str}
+        self.target_lab = None  # Store as [L, a, b] list or None
         
     def get_interpolated(self):
         sorted_keys = sorted(self.points.keys())
@@ -28,13 +32,15 @@ class SpectralData:
     def to_dict(self):
         return {
             "spectral_points": {str(k): v for k, v in self.points.items()},
-            "background_layers": self.bg_layers
+            "background_layers": self.bg_layers,
+            "target_lab": self.target_lab
         }
 
     def from_dict(self, data):
         raw_points = data.get("spectral_points", {})
         self.points = {float(k): v for k, v in raw_points.items()}
         self.bg_layers = data.get("background_layers", [])
+        self.target_lab = data.get("target_lab", None)
 
 class SpectralAnalysisWidget(QWidget):
     log_signal = Signal(str)
@@ -183,6 +189,30 @@ class SpectralAnalysisWidget(QWidget):
 
         self.sidebar_layout.addWidget(bg_geo_group)
         self.sidebar_layout.addStretch()
+        
+        # --- NEW: TARGET MATCHING SECTION ---
+        match_group = QGroupBox("Target Matching")
+        match_group.setStyleSheet("QGroupBox { font-weight: bold; color: #d4af37; padding-top: 20px; }")
+        match_layout = QVBoxLayout(match_group)
+        
+        self.btn_load_target = QPushButton("Load & Crop Blob")
+        self.btn_load_target.clicked.connect(self.handle_load_target)
+        
+        self.target_preview = QLabel("No Target Loaded")
+        self.target_preview.setFixedHeight(30)
+        self.target_preview.setAlignment(Qt.AlignCenter)
+        self.target_preview.setStyleSheet("background: #2b2b2a; border: 1px solid #5a5a58;")
+        
+        self.label_delta_e = QLabel("ΔE: ---")
+        self.label_delta_e.setStyleSheet("font-size: 16px; font-weight: bold; color: #8fbc8f;")
+        self.label_delta_e.setAlignment(Qt.AlignCenter)
+
+        match_layout.addWidget(self.btn_load_target)
+        match_layout.addWidget(self.target_preview)
+        match_layout.addWidget(self.label_delta_e)
+        
+        self.sidebar_layout.addWidget(match_group)
+        self.sidebar_layout.addStretch()
 
     def create_compact_slider(self, layout, label, min_v, max_v, default=0):
         lbl = QLabel(f"{label}:")
@@ -300,15 +330,76 @@ class SpectralAnalysisWidget(QWidget):
         self.refresh_bg_artists()
         self.log_signal.emit("Cleared all background layers.")
 
+    def handle_load_target(self):
+        path, _ = QFileDialog.getOpenFileName(self, "Select Image", "", "Images (*.png *.jpg *.jpeg)")
+        if not path: return
+        
+        dialog = CropDialog(path, self)
+        if dialog.exec():
+            qimg = dialog.get_cropped_image()
+            self.process_target_blob(qimg)
+
+    def process_target_blob(self, qimage):
+        # 1. Force the image into a standard 32-bit RGB format and swap BGR to RGB
+        qimage = qimage.convertToFormat(QImage.Format_RGB32).rgbSwapped()
+    
+        # 1. Convert QImage to Numpy RGB
+        width, height = qimage.width(), qimage.height()
+        ptr = qimage.bits()
+         
+        # 2. Extract 4 channels (RGBA), then slice to get only RGB [:, :, :3]
+        arr = np.frombuffer(ptr, np.uint8).reshape((height, width, 4))[:, :, :3] / 255.0
+        pixels = arr.reshape(-1, 3)
+
+        # 2. CV Heuristic: Chroma = max(RGB) - min(RGB)
+        chroma = np.max(pixels, axis=1) - np.min(pixels, axis=1)
+        
+        # 3. Filter top 10% most saturated
+        threshold = np.percentile(chroma, 90)
+        vibrant_pixels = pixels[chroma >= threshold]
+        
+        # 4. Median of vibrant pixels
+        target_rgb = np.median(vibrant_pixels, axis=0)
+        
+        # 5. Convert to Lab for goal storage
+        target_xyz = colour.sRGB_to_XYZ(target_rgb)
+        self.data.target_lab = colour.XYZ_to_Lab(target_xyz)
+        
+        # Update UI Preview
+        hex_c = '#%02x%02x%02x' % tuple((target_rgb * 255).astype(int))
+        self.target_preview.setStyleSheet(f"background-color: {hex_c}; border-radius: 3px; border: 1px solid #d4af37;")
+        self.target_preview.setText(f"Target Lab: {np.round(self.data.target_lab, 1)}")
+        
+        self.update_view() # Trigger Delta-E recalc
+        self.log_signal.emit("New target color extracted from crop.")
+
     def update_view(self):
         full_y = self.data.get_interpolated()
         self.line.set_data(WAVE_SAMPLES, full_y)
         self.dots.set_offsets(np.c_[list(self.data.points.keys()), list(self.data.points.values())])
+        
         sd = colour.SpectralDistribution(dict(zip(WAVE_SAMPLES, full_y / 100.0)))
         XYZ = colour.sd_to_XYZ(sd, self.cmfs, self.illuminant) / 100.0
         Lab = colour.XYZ_to_Lab(XYZ)
         rgb = np.clip(colour.XYZ_to_sRGB(XYZ), 0, 1)
         hex_c = '#%02x%02x%02x' % tuple((rgb * 255).astype(int))
+        
+        # --- NEW: Delta-E Calculation ---
+        if self.data.target_lab is not None:
+            # Using CIEDE2000 for professional accuracy
+            de = colour.delta_E(self.data.target_lab, Lab, method='CIE 2000')
+            
+            # Color coding the result
+            if de < 0.2: color = "#ffd700" # Gold (Perfect)
+            elif de < 1.0: color = "#90ee90" # Light Green (Excellent)
+            elif de < 2.0: color = "#8fbc8f" # Pale Green (Good)
+            else: color = "#e0e0e0" # Gray (Keep trying)
+            
+            self.label_delta_e.setText(f"ΔE00: {de:.3f}")
+            self.label_delta_e.setStyleSheet(f"color: {color}; font-size: 18px; font-weight: bold;")
+        else:
+            self.label_delta_e.setText("ΔE: ---")
+        
         text_col = 'white' if Lab[0] < 50 else 'black'
         self.color_preview.setStyleSheet(f"background-color:{hex_c}; color:{text_col}; border-radius:4px; font-weight:bold; border: 1px solid #3d3d3b;")
         self.color_preview.setText(f"RGB: {np.round(rgb, 2)} | CIE L*a*b*: {np.round(Lab, 2)}")
