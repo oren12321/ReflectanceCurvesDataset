@@ -89,12 +89,8 @@ class SpectralAnalysisWidget(QWidget):
         self.color_preview.setFixedHeight(35)
         self.color_preview.setAlignment(Qt.AlignCenter)
         
-        self.btn_export = QPushButton("Export JSON")
-        self.btn_import = QPushButton("Import JSON")
         self.btn_reset = QPushButton("Reset Curve")
         
-        self.btn_export.clicked.connect(self.handle_export)
-        self.btn_import.clicked.connect(self.handle_import)
         self.btn_reset.clicked.connect(self.reset)
 
         layout = QVBoxLayout(self)
@@ -104,8 +100,6 @@ class SpectralAnalysisWidget(QWidget):
         layout.addWidget(self.color_preview)
         
         controls = QHBoxLayout()
-        controls.addWidget(self.btn_import)
-        controls.addWidget(self.btn_export)
         controls.addWidget(self.btn_reset)
         layout.addLayout(controls)
 

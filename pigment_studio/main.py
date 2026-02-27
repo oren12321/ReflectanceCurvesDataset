@@ -1,7 +1,7 @@
 import sys
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
                              QHBoxLayout, QTabWidget, QSplitter, QFrame, 
-                             QLabel, QTextEdit)
+                             QLabel, QTextEdit, QPushButton)
 from PySide6.QtCore import Qt
 
 from spectral_tool import SpectralAnalysisWidget, SpectralData
@@ -75,6 +75,8 @@ class PigmentApp(QMainWindow):
         self.sidebar_tabs.addTab(self.create_placeholder("Analysis Tools"), "ANL")
         self.sidebar_tabs.addTab(self.create_placeholder("Synthesis Lab"), "SYN")
         self.sidebar_tabs.addTab(self.create_placeholder("Dataset Manager"), "DAT")
+        
+        self.setup_sidebar()
 
         # RIGHT PANEL: Splitter (Vertical: Workspace vs Logs)
         self.right_splitter = QSplitter(Qt.Vertical)
@@ -96,6 +98,10 @@ class PigmentApp(QMainWindow):
         self.workspace_tabs.addTab(self.spectral_tool, "Spectral Editor")
         self.spectral_tool.log_signal.connect(self.log_output.append)
 
+        # In your Main Window's __init__ after creating the spectral_tool:
+        self.btn_sidebar_export.clicked.connect(self.spectral_tool.handle_export)
+        self.btn_sidebar_import.clicked.connect(self.spectral_tool.handle_import)
+
         # Assemble Right Side
         self.right_splitter.addWidget(self.workspace_tabs)
         self.right_splitter.addWidget(self.log_output)
@@ -109,6 +115,34 @@ class PigmentApp(QMainWindow):
         self.global_splitter.setStretchFactor(1, 4) # Workspace expands
 
         main_layout.addWidget(self.global_splitter)
+
+    # In your Main Window class, update the Sidebar construction:
+    def setup_sidebar(self):
+        # Create a container for Session/File tools
+        session_widget = QWidget()
+        session_layout = QVBoxLayout(session_widget)
+        session_layout.setContentsMargins(10, 10, 10, 10)
+        session_layout.setSpacing(10)
+
+        lbl = QLabel("SESSION CONTROL")
+        lbl.setStyleSheet("font-weight: bold; color: #d4af37;")
+        session_layout.addWidget(lbl)
+
+        self.btn_sidebar_import = QPushButton("Import Session")
+        self.btn_sidebar_export = QPushButton("Export Session")
+        
+        # Style them to look like Sidebar buttons
+        sidebar_btn_style = "padding: 8px; background: #3d3d3b; border: 1px solid #5a5a58;"
+        self.btn_sidebar_import.setStyleSheet(sidebar_btn_style)
+        self.btn_sidebar_export.setStyleSheet(sidebar_btn_style)
+
+        session_layout.addWidget(self.btn_sidebar_import)
+        session_layout.addWidget(self.btn_sidebar_export)
+        session_layout.addStretch() # Push buttons to top
+
+        # Add to the vertical tabs
+        self.sidebar_tabs.addTab(session_widget, "FILE")
+
 
     def create_placeholder(self, text):
         widget = QFrame()
