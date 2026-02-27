@@ -153,6 +153,10 @@ class PigmentApp(QMainWindow):
                 self.spectral_tool.combo_active_bg.clear()
                 for layer in self.shared_spectral_data.bg_layers:
                     self.spectral_tool.combo_active_bg.addItem(layer["name"])
+                    
+                idx = self.spectral_tool.combo_illuminant.findText(self.shared_spectral_data.illuminant_key, Qt.MatchContains | Qt.MatchCaseSensitive)
+                if idx >= 0:
+                    self.spectral_tool.combo_illuminant.setCurrentIndex(idx)
                 
                 self.spectral_tool.refresh_bg_artists()
                 self.spectral_tool.update_view()

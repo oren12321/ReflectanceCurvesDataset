@@ -27,6 +27,7 @@ class SpectralData:
         self.points = {380: 50.0, 780: 50.0}
         self.bg_layers = [] # List of dicts: {"base64": str, "extent": [l, r, b, t], "visible": bool, "name": str}
         self.target_lab = None  # Store as [L, a, b] list or None
+        self.illuminant_key = "D65" # Default
         
     def get_interpolated(self):
         sorted_keys = sorted(self.points.keys())
@@ -37,7 +38,8 @@ class SpectralData:
         return {
             "spectral_points": {str(k): v for k, v in self.points.items()},
             "background_layers": self.bg_layers,
-            "target_lab": self.target_lab
+            "target_lab": self.target_lab,
+            "illuminant_key": self.illuminant_key
         }
 
     def from_dict(self, data):
@@ -45,6 +47,7 @@ class SpectralData:
         self.points = {float(k): v for k, v in raw_points.items()}
         self.bg_layers = data.get("background_layers", [])
         self.target_lab = data.get("target_lab", None)
+        self.illuminant_key = data.get("illuminant_key", "D65")
 
 class SpectralAnalysisWidget(QWidget):
     log_signal = Signal(str)
@@ -126,6 +129,9 @@ class SpectralAnalysisWidget(QWidget):
         except:
             self.cmfs = colour.multi_spectral_distributions['CIE 1931 2 Degree Standard Observer'].copy().align(colour.SpectralShape(WAVE_MIN, WAVE_MAX, 1))
             self.illuminant = colour.spectral_distributions_illuminants['D65'].copy().align(self.cmfs.shape)
+        
+        # Store for JSON export
+        self.data.illuminant_key = 'D65'
         
         self.update_view()
 
@@ -216,6 +222,16 @@ class SpectralAnalysisWidget(QWidget):
         match_layout.addWidget(self.btn_load_target)
         match_layout.addWidget(self.target_preview)
         match_layout.addWidget(self.label_delta_e)
+        
+        # Section: Lighting Environment
+        lbl_light = QLabel("ILLUMINANT (Environment)")
+        lbl_light.setStyleSheet("font-weight: bold; color: #d4af37;")
+        self.sidebar_layout.addWidget(lbl_light)
+
+        self.combo_illuminant = QComboBox()
+        self.combo_illuminant.addItems(["D65 (Daylight)", "A (Incandescent)", "F2 (Fluorescent)"])
+        self.combo_illuminant.currentIndexChanged.connect(self.update_view)
+        self.sidebar_layout.addWidget(self.combo_illuminant)
         
         self.sidebar_layout.addWidget(match_group)
         self.sidebar_layout.addStretch()
@@ -383,6 +399,18 @@ class SpectralAnalysisWidget(QWidget):
         self.log_signal.emit("New target color extracted from crop.")
 
     def update_view(self):
+        # 1. Update Illuminant based on selection
+        choice = self.combo_illuminant.currentText()
+        ill_key = 'D65' if "D65" in choice else ('A' if "A" in choice else 'FL2')
+    
+        # Store for JSON export
+        self.data.illuminant_key = ill_key
+    
+        try:
+            self.illuminant = colour.SDS_ILLUMINANTS[ill_key].copy().align(self.cmfs.shape)
+        except AttributeError:
+            self.illuminant = colour.spectral_distributions_illuminants[ill_key].copy().align(self.cmfs.shape)
+    
         full_y = self.data.get_interpolated()
         self.line.set_data(WAVE_SAMPLES, full_y)
         self.dots.set_offsets(np.c_[list(self.data.points.keys()), list(self.data.points.values())])
