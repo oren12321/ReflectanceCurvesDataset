@@ -133,14 +133,14 @@ class SpectralAnalysisWidget(QWidget):
         # Colour calculation
         sd = colour.SpectralDistribution(dict(zip(WAVE_SAMPLES, full_y / 100.0)))
         XYZ = colour.sd_to_XYZ(sd, self.cmfs, self.illuminant) / 100.0
+        Lab = colour.XYZ_to_Lab(XYZ)
         rgb = np.clip(colour.XYZ_to_sRGB(XYZ), 0, 1)
         hex_c = '#%02x%02x%02x' % tuple((rgb * 255).astype(int))
         
         # UI Styling
-        brightness = np.mean(rgb)
-        text_col = 'white' if brightness < 0.5 else 'black'
+        text_col = 'white' if Lab[0] < 50 else 'black'
         self.color_preview.setStyleSheet(f"background-color: {hex_c}; color: {text_col}; border-radius: 4px; font-weight: bold; border: 1px solid #3d3d3b;")
-        self.color_preview.setText(f"HEX: {hex_c.upper()} | RGB: {np.round(rgb, 2)} | XYZ: {np.round(XYZ, 2)}")
+        self.color_preview.setText(f"RGB: {np.round(rgb, 2)} | CIE L*a*b*: {np.round(Lab, 2)}")
         self.canvas.draw_idle()
 
     def on_click(self, event):
