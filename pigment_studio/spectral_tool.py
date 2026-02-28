@@ -323,59 +323,76 @@ class SpectralAnalysisWidget(QWidget):
             self.log_signal.emit("Error: No target color loaded.")
             return
 
-        self.log_signal.emit("Running Smooth-Match Optimization...")
+        self.log_signal.emit("Searching for optimal spectral match...")
         
         sorted_keys = sorted(self.data.points.keys())
-        initial_y = [self.data.points[k] for k in sorted_keys]
-        
-        # We need the keys for the internal interpolation
+        initial_y = np.array([self.data.points[k] for k in sorted_keys])
         s_keys = np.array(sorted_keys)
-
-        def objective(y_values):
-            # 1. Generate the curve
-            temp_y_full = np.interp(WAVE_SAMPLES, s_keys, y_values)
-            
-            # 2. Calculate Color (Delta E)
-            sd = colour.SpectralDistribution(dict(zip(WAVE_SAMPLES, temp_y_full / 100.0)))
-            XYZ = colour.sd_to_XYZ(sd, self.cmfs, self.illuminant) / 100.0
-            current_lab = colour.XYZ_to_Lab(XYZ)
-            de00 = colour.delta_E(self.data.target_lab, current_lab, method='CIE 2000')
-            
-            # 3. Smoothness Penalty (The "Anti-Jitter" Logic)
-            # Calculate the second derivative (change in slope)
-            # We want to minimize the 'sharpness' of the bends
-            if len(y_values) > 2:
-                # np.diff(y, 2) calculates the second order difference
-                smoothness_penalty = np.sum(np.square(np.diff(y_values, 2))) * 0.005
-            else:
-                smoothness_penalty = 0
-
-            # Total Cost: Primary goal (Color) + Secondary goal (Physicality)
-            return de00 + smoothness_penalty
-
-        # Bounds: 0.5% to 99.5%
         bounds = [(0.5, 99.5) for _ in initial_y]
 
-        # Use 'L-BFGS-B' for bound-constrained optimization
-        res = minimize(objective, initial_y, method='L-BFGS-B', bounds=bounds, tol=1e-4)
+        def objective(y_values):
+            temp_y_full = np.interp(WAVE_SAMPLES, s_keys, y_values)
+            sd = colour.SpectralDistribution(dict(zip(WAVE_SAMPLES, temp_y_full / 100.0)))
+            
+            # 1. Primary Goal: The CURRENTLY SELECTED illuminant in the UI
+            xyz_active = colour.sd_to_XYZ(sd, self.cmfs, self.illuminant) / 100.0
+            de_active = colour.delta_E(self.data.target_lab, colour.XYZ_to_Lab(xyz_active), method='CIE 2000')
+            
+            # 2. Secondary Goals: Check the OTHER TWO for metamerism
+            # This ensures the curve stays 'physically plausible'
+            de_metameric = 0
+            # Determine which two are NOT active
+            active_key = self.data.illuminant_key # e.g. 'D65'
+            others = [k for k in ['D65', 'A', 'FL2'] if k != active_key]
+            
+            for ill_key in others:
+                try: ill = colour.SDS_ILLUMINANTS[ill_key].copy().align(self.cmfs.shape)
+                except: ill = colour.spectral_distributions_illuminants[ill_key].copy().align(self.cmfs.shape)
+                
+                xyz = colour.sd_to_XYZ(sd, self.cmfs, ill) / 100.0
+                de_metameric += colour.delta_E(self.data.target_lab, colour.XYZ_to_Lab(xyz), method='CIE 2000')
 
-        if res.success:
+            # 3. Shape Penalties
+            smooth = np.sum(np.square(np.diff(y_values, 2))) * 0.001
+            
+            # Weighted Return
+            return de_active + (0.1 * de_metameric) + smooth
+
+
+
+        # --- MULTI-START STRATEGY ---
+        # 1. Try current position
+        best_res = minimize(objective, initial_y, method='L-BFGS-B', bounds=bounds, tol=1e-4)
+        
+        # 2. If results are poor (Delta E > 0.5), try 3 "Jiggled" restarts
+        if best_res.fun > 0.5:
+            self.log_signal.emit("Initial search suboptimal. Retrying with random heuristics...")
+            for i in range(3):
+                # Jiggle: Current Y +/- 15% random variation
+                jiggled_start = np.clip(initial_y + np.random.uniform(-15, 15, len(initial_y)), 0.5, 99.5)
+                res = minimize(objective, jiggled_start, method='L-BFGS-B', bounds=bounds, tol=1e-4)
+                
+                if res.fun < best_res.fun:
+                    best_res = res
+                
+                if best_res.fun < 0.1: # Stop early if we find an elite match
+                    break
+
+        # 3. Apply the winner
+        if best_res.success or best_res.fun < 1.0:
             for i, k in enumerate(sorted_keys):
-                self.data.points[k] = res.x[i]
+                self.data.points[k] = best_res.x[i]
             
             self.update_view()
+            # Calculate final pure Delta E for the log
+            final_y_full = self.data.get_interpolated()
+            final_sd = colour.SpectralDistribution(dict(zip(WAVE_SAMPLES, final_y_full / 100.0)))
+            final_lab = colour.XYZ_to_Lab(colour.sd_to_XYZ(final_sd, self.cmfs, self.illuminant) / 100.0)
+            final_de = colour.delta_E(self.data.target_lab, final_lab, method='CIE 2000')
             
-            # --- UPDATE THIS LOG LINE ---
-            # Calculate the final 'pure' Delta E only
-            full_y = self.data.get_interpolated()
-            sd = colour.SpectralDistribution(dict(zip(WAVE_SAMPLES, full_y / 100.0)))
-            XYZ = colour.sd_to_XYZ(sd, self.cmfs, self.illuminant) / 100.0
-            current_lab = colour.XYZ_to_Lab(XYZ)
-            final_de = colour.delta_E(self.data.target_lab, current_lab, method='CIE 2000')
-            
-            self.log_signal.emit(f"Match Successful. ΔE: {final_de:.4f} (Smoothness Cost: {res.fun - final_de:.4f})")
+            self.log_signal.emit(f"Match Finalized. ΔE: {final_de:.4f}")
         else:
-            self.log_signal.emit(f"Optimization failed: {res.message}")
+            self.log_signal.emit(f"Optimization failed to converge: {best_res.message}")
 
     def apply_amplitude_scaling(self, value):
         scale = value / 100.0
