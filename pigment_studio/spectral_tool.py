@@ -13,6 +13,8 @@ from matplotlib.figure import Figure
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.backends.backend_qtagg import NavigationToolbar2QT as NavigationToolbar
 
+from scipy.optimize import minimize
+
 from crop_dialog import CropDialog
 
 WAVE_MIN, WAVE_MAX = 380, 780
@@ -293,6 +295,16 @@ class SpectralAnalysisWidget(QWidget):
         self.combo_illuminant.currentIndexChanged.connect(self.update_view)
         self.sidebar_layout.addWidget(self.combo_illuminant)
         
+        # Section: Optimization
+        lbl_opt = QLabel("SMART TOOLS")
+        lbl_opt.setStyleSheet("font-weight: bold; color: #d4af37;")
+        self.sidebar_layout.addWidget(lbl_opt)
+
+        self.btn_smart_match = QPushButton("Auto-Optimize Curve")
+        self.btn_smart_match.setToolTip("Micro-adjusts points to minimize Delta E")
+        self.btn_smart_match.clicked.connect(self.run_optimization)
+        self.sidebar_layout.addWidget(self.btn_smart_match)
+        
         self.sidebar_layout.addWidget(match_group)
         self.sidebar_layout.addStretch()
 
@@ -306,6 +318,65 @@ class SpectralAnalysisWidget(QWidget):
         layout.addWidget(s)
         return s
         
+    def run_optimization(self):
+        if self.data.target_lab is None:
+            self.log_signal.emit("Error: No target color loaded.")
+            return
+
+        self.log_signal.emit("Running Smooth-Match Optimization...")
+        
+        sorted_keys = sorted(self.data.points.keys())
+        initial_y = [self.data.points[k] for k in sorted_keys]
+        
+        # We need the keys for the internal interpolation
+        s_keys = np.array(sorted_keys)
+
+        def objective(y_values):
+            # 1. Generate the curve
+            temp_y_full = np.interp(WAVE_SAMPLES, s_keys, y_values)
+            
+            # 2. Calculate Color (Delta E)
+            sd = colour.SpectralDistribution(dict(zip(WAVE_SAMPLES, temp_y_full / 100.0)))
+            XYZ = colour.sd_to_XYZ(sd, self.cmfs, self.illuminant) / 100.0
+            current_lab = colour.XYZ_to_Lab(XYZ)
+            de00 = colour.delta_E(self.data.target_lab, current_lab, method='CIE 2000')
+            
+            # 3. Smoothness Penalty (The "Anti-Jitter" Logic)
+            # Calculate the second derivative (change in slope)
+            # We want to minimize the 'sharpness' of the bends
+            if len(y_values) > 2:
+                # np.diff(y, 2) calculates the second order difference
+                smoothness_penalty = np.sum(np.square(np.diff(y_values, 2))) * 0.005
+            else:
+                smoothness_penalty = 0
+
+            # Total Cost: Primary goal (Color) + Secondary goal (Physicality)
+            return de00 + smoothness_penalty
+
+        # Bounds: 0.5% to 99.5%
+        bounds = [(0.5, 99.5) for _ in initial_y]
+
+        # Use 'L-BFGS-B' for bound-constrained optimization
+        res = minimize(objective, initial_y, method='L-BFGS-B', bounds=bounds, tol=1e-4)
+
+        if res.success:
+            for i, k in enumerate(sorted_keys):
+                self.data.points[k] = res.x[i]
+            
+            self.update_view()
+            
+            # --- UPDATE THIS LOG LINE ---
+            # Calculate the final 'pure' Delta E only
+            full_y = self.data.get_interpolated()
+            sd = colour.SpectralDistribution(dict(zip(WAVE_SAMPLES, full_y / 100.0)))
+            XYZ = colour.sd_to_XYZ(sd, self.cmfs, self.illuminant) / 100.0
+            current_lab = colour.XYZ_to_Lab(XYZ)
+            final_de = colour.delta_E(self.data.target_lab, current_lab, method='CIE 2000')
+            
+            self.log_signal.emit(f"Match Successful. ΔE: {final_de:.4f} (Smoothness Cost: {res.fun - final_de:.4f})")
+        else:
+            self.log_signal.emit(f"Optimization failed: {res.message}")
+
     def apply_amplitude_scaling(self, value):
         scale = value / 100.0
         # We modify the values, but keep them within our 0.5 - 99.5 physical limit
