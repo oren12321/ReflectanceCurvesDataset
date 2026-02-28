@@ -6,7 +6,7 @@ import io
 import os
 from PIL import Image
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton, 
-                             QLabel, QFileDialog, QSlider, QGroupBox, QFrame, QComboBox, QCheckBox, QScrollArea)
+                             QLabel, QFileDialog, QSlider, QGroupBox, QFrame, QComboBox, QCheckBox, QScrollArea, QApplication)
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QImage
 from matplotlib.figure import Figure
@@ -151,6 +151,8 @@ class SpectralAnalysisWidget(QWidget):
         except:
             self.cmfs = colour.multi_spectral_distributions['CIE 1931 2 Degree Standard Observer'].copy().align(colour.SpectralShape(WAVE_MIN, WAVE_MAX, 1))
             self.illuminant = colour.spectral_distributions_illuminants['D65'].copy().align(self.cmfs.shape)
+        
+        self.stop_optimization = False # Flag to kill the loop
         
         self.data.illuminant_key = 'D65'
         self.update_view()
@@ -301,9 +303,18 @@ class SpectralAnalysisWidget(QWidget):
         self.sidebar_layout.addWidget(lbl_opt)
 
         self.btn_smart_match = QPushButton("Auto-Optimize Curve")
+        self.btn_stop_match = QPushButton("Stop Optimization")
+        
+        # Style the Stop button to look distinct (orange/warning)
+        self.btn_stop_match.setStyleSheet("background-color: #a0522d; color: white;")
+        self.btn_stop_match.setEnabled(False) # Off by default
+        
         self.btn_smart_match.setToolTip("Micro-adjusts points to minimize Delta E")
         self.btn_smart_match.clicked.connect(self.run_optimization)
+        self.btn_stop_match.clicked.connect(self.request_stop)
+        
         self.sidebar_layout.addWidget(self.btn_smart_match)
+        self.sidebar_layout.addWidget(self.btn_stop_match)
         
         self.sidebar_layout.addWidget(match_group)
         self.sidebar_layout.addStretch()
@@ -318,12 +329,26 @@ class SpectralAnalysisWidget(QWidget):
         layout.addWidget(s)
         return s
         
+    def request_stop(self):
+        self.stop_optimization = True
+        self.log_signal.emit("Stop requested...")
+        
     def run_optimization(self):
         if self.data.target_lab is None:
             self.log_signal.emit("Error: No target color loaded.")
             return
-
+            
+        # --- POINT DENSITY CHECK ---
+        num_pts = len(self.data.points)
+        if num_pts < 5:
+            self.log_signal.emit(f"Warning: Only {num_pts} points. Optimization may be too 'stiff' for a good match.")
+        elif num_pts > 25:
+            self.log_signal.emit(f"Notice: {num_pts} points. High density may cause 'jitter' or slow performance.")
+            
         self.log_signal.emit("Searching for optimal spectral match...")
+        self.stop_optimization = False
+        self.btn_stop_match.setEnabled(True)
+        self.btn_smart_match.setEnabled(False)
         
         sorted_keys = sorted(self.data.points.keys())
         initial_y = np.array([self.data.points[k] for k in sorted_keys])
@@ -366,20 +391,27 @@ class SpectralAnalysisWidget(QWidget):
         
         # 2. If results are poor (Delta E > 0.5), try 3 "Jiggled" restarts
         if best_res.fun > 0.5:
-            self.log_signal.emit("Initial search suboptimal. Retrying with random heuristics...")
             for i in range(3):
-                # Jiggle: Current Y +/- 15% random variation
+                # 1. Process events to keep UI responsive and check the Stop flag
+                QApplication.processEvents() 
+                if self.stop_optimization: 
+                    self.log_signal.emit("Optimization aborted by user.")
+                    break
+                
+                self.log_signal.emit(f"Retrying heuristic search ({i+1}/3)...")
                 jiggled_start = np.clip(initial_y + np.random.uniform(-15, 15, len(initial_y)), 0.5, 99.5)
                 res = minimize(objective, jiggled_start, method='L-BFGS-B', bounds=bounds, tol=1e-4)
                 
                 if res.fun < best_res.fun:
                     best_res = res
-                
-                if best_res.fun < 0.1: # Stop early if we find an elite match
-                    break
+                if best_res.fun < 0.1: break
 
+        # --- WRAP UP ---
+        self.btn_stop_match.setEnabled(False)
+        self.btn_smart_match.setEnabled(True)
+        
         # 3. Apply the winner
-        if best_res.success or best_res.fun < 1.0:
+        if not self.stop_optimization and (best_res.success or best_res.fun < 1.0):
             for i, k in enumerate(sorted_keys):
                 self.data.points[k] = best_res.x[i]
             
