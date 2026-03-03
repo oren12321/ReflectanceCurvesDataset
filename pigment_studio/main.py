@@ -6,6 +6,27 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
 from PySide6.QtCore import Qt
 from spectral_tool import SpectralAnalysisWidget, SpectralData
 
+import sys
+import ctypes
+
+def enable_windows_dark_title_bar(hwnd):
+    if sys.platform != "win32":
+        return  # Do nothing on macOS/Linux
+
+    try:
+        import ctypes
+        DWMWA_USE_IMMERSIVE_DARK_MODE = 20  # Windows 10 1809+
+
+        value = ctypes.c_int(1)
+        ctypes.windll.dwmapi.DwmSetWindowAttribute(
+            hwnd,
+            DWMWA_USE_IMMERSIVE_DARK_MODE,
+            ctypes.byref(value),
+            ctypes.sizeof(value)
+        )
+    except Exception:
+        pass
+
 class PigmentApp(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -17,6 +38,9 @@ class PigmentApp(QMainWindow):
 
         self.apply_styles()
         self.setup_ui()
+        
+        hwnd = int(self.winId())
+        enable_windows_dark_title_bar(hwnd)
 
     def apply_styles(self):
         self.setStyleSheet("""
