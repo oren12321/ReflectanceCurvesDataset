@@ -60,6 +60,12 @@ class SpectralAnalysisWidget(QWidget):
         self.dragging_key = None
         self.pick_radius = 10
         self.bg_artists = [] 
+        
+        pigments_path = os.path.join(os.path.dirname(__file__), "pigments.json")
+        with open(pigments_path, "r", encoding="utf-8") as f:
+            pigments_data = json.load(f)
+
+        self.generic_physics = pigments_data.get("generic_physics", {}) or {}
 
         # --- 1. Main Layout (Horizontal) ---
         self.main_h_layout = QHBoxLayout(self)
@@ -157,6 +163,8 @@ class SpectralAnalysisWidget(QWidget):
         self.data.illuminant_key = 'D65'
         self.update_view()
 
+    def get_generic_constraints(self):
+        return dict(self.generic_physics or {})
 
     def apply_sidebar_styles(self):
         self.scroll_area.setStyleSheet("""
@@ -302,6 +310,14 @@ class SpectralAnalysisWidget(QWidget):
         lbl_opt.setStyleSheet("font-weight: bold; color: #d4af37;")
         self.sidebar_layout.addWidget(lbl_opt)
 
+        self.combo_pigment = QComboBox()
+        self.combo_pigment.addItem("Generic")
+        self.sidebar_layout.addWidget(self.combo_pigment)
+
+        self.check_use_current_curve = QCheckBox("Use current curve as starting point")
+        self.check_use_current_curve.setChecked(True)
+        self.sidebar_layout.addWidget(self.check_use_current_curve)
+
         self.btn_smart_match = QPushButton("Auto-Optimize Curve")
         self.btn_stop_match = QPushButton("Stop Optimization")
         
@@ -355,34 +371,99 @@ class SpectralAnalysisWidget(QWidget):
         s_keys = np.array(sorted_keys)
         bounds = [(0.5, 99.5) for _ in initial_y]
 
+        constraints = self.get_generic_constraints()
+
+        smooth_w = constraints.get("smoothness_weight", 0.8)
+        single_peak_w = constraints.get("single_peak_weight", 1.0)
+        slope_limit = constraints.get("slope_limit", 0.15)
+        ref_min = constraints.get("reflectance_min", 0.0)
+        ref_max = constraints.get("reflectance_max", 1.0)
+        bw_min = constraints.get("bandwidth_min", 40)
+        bw_max = constraints.get("bandwidth_max", 180)
+        meta_w = constraints.get("metamerism_penalty", 0.6)
+        
+        # --- AUTO-GENERATED STARTING CURVE (if checkbox is unchecked) ---
+        if not self.check_use_current_curve.isChecked():
+
+            # 1. Decide number of control points
+            #    12–16 points is a sweet spot: flexible but stable
+            num_points = 14
+
+            # 2. Generate evenly spaced wavelengths
+            x_new = np.linspace(WAVE_MIN, WAVE_MAX, num_points)
+
+            # 3. Generate pigment-like initial reflectance using generic physics
+            #    Use bandwidth and peak center from generic_physics
+            peak_center = (WAVE_MIN + WAVE_MAX) / 2
+            bw = (bw_min + bw_max) / 2
+            sigma = bw / 2.355  # convert FWHM to sigma
+
+            y_new = np.exp(-0.5 * ((x_new - peak_center) / sigma) ** 2)
+            y_new = y_new * 80 + 10
+            y_new = np.clip(y_new, 0.5, 99.5)
+
+            # 4. Replace all curve points with the new ones
+            self.data.points = {float(x): float(y) for x, y in zip(x_new, y_new)}
+
+            # 5. Update sorted keys and initial_y for the optimizer
+            sorted_keys = sorted(self.data.points.keys())
+            s_keys = np.array(sorted_keys)
+            initial_y = np.array([self.data.points[k] for k in sorted_keys])
+
+            # 6. Update bounds to match new number of points
+            bounds = [(0.5, 99.5) for _ in initial_y]
+
         def objective(y_values):
-            temp_y_full = np.interp(WAVE_SAMPLES, s_keys, y_values)
-            sd = colour.SpectralDistribution(dict(zip(WAVE_SAMPLES, temp_y_full / 100.0)))
-            
-            # 1. Primary Goal: The CURRENTLY SELECTED illuminant in the UI
-            xyz_active = colour.sd_to_XYZ(sd, self.cmfs, self.illuminant) / 100.0
-            de_active = colour.delta_E(self.data.target_lab, colour.XYZ_to_Lab(xyz_active), method='CIE 2000')
-            
-            # 2. Secondary Goals: Check the OTHER TWO for metamerism
-            # This ensures the curve stays 'physically plausible'
-            de_metameric = 0
-            # Determine which two are NOT active
-            active_key = self.data.illuminant_key # e.g. 'D65'
-            others = [k for k in ['D65', 'A', 'FL2'] if k != active_key]
-            
-            for ill_key in others:
-                try: ill = colour.SDS_ILLUMINANTS[ill_key].copy().align(self.cmfs.shape)
-                except: ill = colour.spectral_distributions_illuminants[ill_key].copy().align(self.cmfs.shape)
-                
-                xyz = colour.sd_to_XYZ(sd, self.cmfs, ill) / 100.0
-                de_metameric += colour.delta_E(self.data.target_lab, colour.XYZ_to_Lab(xyz), method='CIE 2000')
+            # Interpolate full reflectance curve
+            full = np.interp(WAVE_SAMPLES, s_keys, y_values)
+            sd = colour.SpectralDistribution(dict(zip(WAVE_SAMPLES, full / 100.0)))
 
-            # 3. Shape Penalties
-            smooth = np.sum(np.square(np.diff(y_values, 2))) * 0.001
-            
-            # Weighted Return
-            return de_active + (0.1 * de_metameric) + smooth
+            # --- 1. Primary objective: match target under D65 ---
+            # Convert curve → XYZ → Lab under D65
+            ill_D65 = colour.SDS_ILLUMINANTS["D65"].copy().align(self.cmfs.shape)
+            xyz_D65 = colour.sd_to_XYZ(sd, self.cmfs, ill_D65) / 100.0
+            lab_D65 = colour.XYZ_to_Lab(xyz_D65)
 
+            # Compare to target Lab (only valid under D65)
+            de_D65 = colour.delta_E(self.data.target_lab, lab_D65, method='CIE 2000')
+
+            # --- 3. Smoothness penalty (second derivative) ---
+            smooth = np.sum(np.square(np.diff(y_values, 2))) * smooth_w * 0.001
+
+            # --- 4. Slope limit penalty ---
+            slopes = np.diff(y_values)
+            slope_penalty = np.sum(np.clip(np.abs(slopes) - slope_limit * 100, 0, None)) * 0.0005
+
+            # --- 5. Single-peak penalty ---
+            peaks = np.where((full[1:-1] > full[:-2]) & (full[1:-1] > full[2:]))[0]
+            peak_penalty = max(0, len(peaks) - 1) * single_peak_w * 0.01
+
+            # --- 6. Bandwidth penalty ---
+            half = (np.max(full) + np.min(full)) / 2
+            above = np.where(full >= half)[0]
+            bw_penalty = 0
+            if len(above) > 1:
+                bw = above[-1] - above[0]
+                if bw < bw_min:
+                    bw_penalty = (bw_min - bw) * 0.001
+                elif bw > bw_max:
+                    bw_penalty = (bw - bw_max) * 0.001
+
+            # --- 7. Reflectance bounds penalty ---
+            bounds_penalty = (
+                np.sum(np.clip(full / 100.0 - ref_max, 0, None)) +
+                np.sum(np.clip(ref_min - full / 100.0, 0, None))
+            ) * 10
+
+            # --- Final weighted sum ---
+            return (
+                de_D65 +
+                smooth +
+                slope_penalty +
+                peak_penalty +
+                bw_penalty +
+                bounds_penalty
+            )
 
 
         # --- MULTI-START STRATEGY ---
@@ -641,31 +722,50 @@ class SpectralAnalysisWidget(QWidget):
         
         # --- NEW: Delta-E Calculation ---
         if self.data.target_lab is not None:
-            # 1. Convert Lab back to RGB for the UI Swatch
-            # We assume D65/2deg as used elsewhere in your app
+            # --- Compute curve Lab under the current illuminant ---
+            sd = colour.SpectralDistribution(dict(zip(WAVE_SAMPLES, full_y / 100.0)))
+            XYZ_current = colour.sd_to_XYZ(sd, self.cmfs, self.illuminant) / 100.0
+            Lab_current = colour.XYZ_to_Lab(XYZ_current)
+
+            # --- Always compute curve Lab under D65 (reference appearance) ---
+            ill_D65 = colour.SDS_ILLUMINANTS["D65"].copy().align(self.cmfs.shape)
+            XYZ_D65 = colour.sd_to_XYZ(sd, self.cmfs, ill_D65) / 100.0
+            Lab_D65 = colour.XYZ_to_Lab(XYZ_D65)
+
+            # --- Update target preview (always D65-based) ---
             t_xyz = colour.Lab_to_XYZ(self.data.target_lab)
             t_rgb = np.clip(colour.XYZ_to_sRGB(t_xyz), 0, 1)
             t_hex = '#%02x%02x%02x' % tuple((t_rgb * 255).astype(int))
-            
-            # 2. Update the Sidebar Target Label
+
             self.target_preview.setStyleSheet(
                 f"background-color: {t_hex}; border-radius: 3px; border: 1px solid #d4af37;"
             )
-            # Round for clean professional display
             rounded_lab = np.round(self.data.target_lab, 1)
             self.target_preview.setText(f"Target Lab: {rounded_lab}")
-        
-            # Using CIEDE2000 for professional accuracy
-            de = colour.delta_E(self.data.target_lab, Lab, method='CIE 2000')
-            
-            # Color coding the result
-            if de < 0.2: color = "#ffd700" # Gold (Perfect)
-            elif de < 1.0: color = "#90ee90" # Light Green (Excellent)
-            elif de < 2.0: color = "#8fbc8f" # Pale Green (Good)
-            else: color = "#e0e0e0" # Gray (Keep trying)
-            
-            self.label_delta_e.setText(f"ΔE00: {de:.3f}")
-            self.label_delta_e.setStyleSheet(f"color: {color}; font-size: 18px; font-weight: bold;")
+
+            # --- Determine what to display based on illuminant ---
+            ill_key = self.data.illuminant_key
+
+            if ill_key == "D65":
+                # True ΔE (only valid under D65)
+                de = colour.delta_E(self.data.target_lab, Lab_current, method='CIE 2000')
+
+                # Color coding
+                if de < 0.2: color = "#ffd700"
+                elif de < 1.0: color = "#90ee90"
+                elif de < 2.0: color = "#8fbc8f"
+                else: color = "#e0e0e0"
+
+                self.label_delta_e.setText(f"ΔE00 (D65): {de:.3f}")
+                self.label_delta_e.setStyleSheet(f"color: {color}; font-size: 18px; font-weight: bold;")
+
+            else:
+                # Metamerism index: how much the curve shifts from its D65 appearance
+                meta = colour.delta_E(Lab_D65, Lab_current, method='CIE 2000')
+
+                # Neutral gray for metamerism display
+                self.label_delta_e.setText(f"Metamerism vs\n D65: {meta:.3f}")
+                self.label_delta_e.setStyleSheet("color: #e0e0e0; font-size: 9px; font-weight: bold;")
         else:
             self.label_delta_e.setText("ΔE: ---")
             self.target_preview.setStyleSheet("background: #2b2b2a; border: 1px solid #5a5a58;")

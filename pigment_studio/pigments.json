@@ -1,0 +1,128 @@
+{
+  "_comment": "This file defines universal pigment physics and optional pigment-specific profiles. All fields are optional; missing or null values are ignored by the optimizer.",
+
+  "generic_physics": {
+    "_comment": "Universal physical constraints applied to ALL pigments, ensuring realistic artist-pigment behavior.",
+
+    "smoothness_weight": 0.8,
+    "_smoothness_weight_comment": "Penalizes curvature (second derivative). Higher = smoother curves.",
+
+    "single_peak_weight": 1.0,
+    "_single_peak_weight_comment": "Discourages multiple maxima. Real pigments usually have one dominant absorption band.",
+
+    "slope_limit": 0.15,
+    "_slope_limit_comment": "Maximum allowed reflectance change between adjacent wavelengths.",
+
+    "reflectance_min": 0.0,
+    "reflectance_max": 1.0,
+    "_reflectance_bounds_comment": "Physical reflectance limits (0–1).",
+
+    "bandwidth_min": 40,
+    "bandwidth_max": 180,
+    "_bandwidth_comment": "Expected width of the main absorption band in nm. Prevents unrealistic narrow spikes.",
+
+    "metamerism_penalty": 0.6,
+    "_metamerism_penalty_comment": "Penalizes solutions that match ΔE but behave unrealistically under different illuminants."
+  },
+
+  "pigments": [
+    {
+      "_comment": "Example of a fully populated pigment-specific profile. All fields optional.",
+
+      "name": "Ultramarine Blue",
+      "code": "PB29",
+      "category": "inorganic",
+      "family": "ultramarine",
+
+      "spectral_shape": {
+        "_comment": "Constraints that guide the optimizer toward the characteristic reflectance shape of this pigment family.",
+
+        "peak_range": [450, 480],
+        "_peak_range_comment": "Expected wavelength of the main reflectance peak (nm).",
+
+        "bandwidth": 70,
+        "_bandwidth_comment": "Width of the main absorption band (nm).",
+
+        "secondary_peak_range": null,
+        "_secondary_peak_comment": "Optional secondary lobe (e.g., quinacridones). Null means no secondary peak.",
+
+        "smoothness_weight": 0.9,
+        "_smoothness_weight_comment": "Overrides generic smoothness if provided.",
+
+        "single_peak_weight": 0.8,
+        "_single_peak_weight_comment": "Allows slight shoulder behavior typical of ultramarine.",
+
+        "slope_limit": 0.12,
+        "_slope_limit_comment": "More restrictive slope for this pigment family.",
+
+        "reflectance_min": 0.0,
+        "reflectance_max": 1.0
+      },
+
+      "optical_coefficients": {
+        "_comment": "Kubelka–Munk related parameters for mixing, glazing, and thickness simulation.",
+
+        "absorption_strength": 0.7,
+        "_absorption_strength_comment": "Relative magnitude of K(λ). Higher = stronger absorption.",
+
+        "scattering_strength": 0.9,
+        "_scattering_strength_comment": "Relative magnitude of S(λ). Higher = more opaque/bright.",
+
+        "opacity": 0.6,
+        "_opacity_comment": "How quickly the pigment hides the substrate.",
+
+        "transparency": 0.2,
+        "_transparency_comment": "How much light passes through thin layers.",
+
+        "undertone_shift": 0.15,
+        "_undertone_shift_comment": "Hue shift in thin films (common in ultramarine).",
+
+        "masstone_shift": 0.05,
+        "_masstone_shift_comment": "Hue shift in thick films."
+      },
+
+      "mixing_behavior": {
+        "_comment": "How the pigment behaves when mixed with others or diluted with mediums.",
+
+        "tinting_strength": 0.6,
+        "_tinting_strength_comment": "Influence in mixtures. Ultramarine is moderate.",
+
+        "medium_interaction": {
+          "_comment": "Medium-specific behavior for oil, acrylic, watercolor, etc.",
+
+          "oil": {
+            "refractive_index": 1.48,
+            "film_thickness_curve": [0.1, 0.3, 0.6, 1.0]
+          },
+
+          "acrylic": {
+            "refractive_index": 1.50,
+            "film_thickness_curve": [0.1, 0.25, 0.5, 0.9]
+          },
+
+          "watercolor": {
+            "refractive_index": 1.33,
+            "granulation": 0.7,
+            "flocculation": 0.4
+          }
+        },
+
+        "concentration_curve": [0.1, 0.3, 0.6, 1.0],
+        "_concentration_curve_comment": "How reflectance changes with pigment load (for KM mixing)."
+      },
+
+      "realism_parameters": {
+        "_comment": "Optional physical realism parameters.",
+
+        "particle_size": 1.2,
+        "_particle_size_comment": "Relative particle size (μm).",
+
+        "refractive_index": 1.50,
+        "_refractive_index_comment": "Pigment particle refractive index.",
+
+        "lightfastness": "I",
+        "_lightfastness_comment": "ASTM lightfastness rating."
+      }
+    }
+  ]
+}
